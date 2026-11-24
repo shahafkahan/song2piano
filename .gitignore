@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.venv-api/
+.venv-worker/
+dist/
+build/
+
+# Node / Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Local runtime state & env
+.env
+local_data/
+*.db
+*.sqlite*
+
+# Logs & OS
+*.log
+.DS_Store
+Thumbs.db

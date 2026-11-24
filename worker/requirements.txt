@@ -1,0 +1,31 @@
+# Core worker & shared dependencies (NO TensorFlow)
+celery>=5.4,<6.0
+redis>=5.0,<6.0
+sqlalchemy>=2.0,<3.0
+psycopg[binary]>=3.2,<4.0
+boto3>=1.34,<2.0
+pydantic-settings>=2.2,<3.0
+
+# Scientific & Audio stack (pinned numpy<2 for torchlibrosa/resampy/demucs/basic-pitch)
+numpy==1.26.4
+scipy>=1.11,<1.15
+librosa==0.10.2.post1
+soundfile>=0.12.1
+mido>=1.3.2
+pretty-midi>=0.2.10
+resampy>=0.2.2,<0.4.3
+scikit-learn>=1.3,<1.7
+mir-eval>=0.7
+typing-extensions>=4.9
+
+# ML Inference (ONNX + PyTorch only; basic-pitch installed with --no-deps)
+onnxruntime>=1.17,<1.21
+demucs==4.1.0
+piano-transcription-inference==0.0.6
+torchlibrosa>=0.1.0
+matplotlib>=3.8,<3.10
+
+# Notation & Vector PDF Engraving
+music21>=9.1,<10.0
+verovio>=4.3
+PyMuPDF==1.25.5

@@ -1,0 +1,139 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-songscribe}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-songscribe}
+      POSTGRES_DB: ${POSTGRES_DB:-songscribe}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-songscribe} -d ${POSTGRES_DB:-songscribe}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-minioadmin123}
+    ports:
+      - "${MINIO_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 ${S3_ACCESS_KEY:-minioadmin} ${S3_SECRET_KEY:-minioadmin123};
+      mc mb -p local/${S3_BUCKET:-songscribe} || true;
+      exit 0;
+      "
+
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://songscribe:songscribe@postgres:5432/songscribe}
+      QUEUE_BACKEND: ${QUEUE_BACKEND:-celery}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://redis:6379/0}
+      CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://redis:6379/0}
+      STORAGE_BACKEND: ${STORAGE_BACKEND:-s3}
+      S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-http://minio:9000}
+      S3_PUBLIC_ENDPOINT_URL: ${S3_PUBLIC_ENDPOINT_URL:-http://localhost:9000}
+      S3_BUCKET: ${S3_BUCKET:-songscribe}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-minioadmin}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-minioadmin123}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_USE_SSL: ${S3_USE_SSL:-false}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://localhost:3000,http://localhost}
+      MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-100}
+    ports:
+      - "${API_PORT:-8000}:8000"
+
+  worker:
+    build:
+      context: .
+      dockerfile: worker/Dockerfile
+      args:
+        TORCH_INDEX_URL: ${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cpu}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://songscribe:songscribe@postgres:5432/songscribe}
+      QUEUE_BACKEND: ${QUEUE_BACKEND:-celery}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://redis:6379/0}
+      CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://redis:6379/0}
+      STORAGE_BACKEND: ${STORAGE_BACKEND:-s3}
+      S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-http://minio:9000}
+      S3_BUCKET: ${S3_BUCKET:-songscribe}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-minioadmin}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-minioadmin123}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_USE_SSL: ${S3_USE_SSL:-false}
+      DEVICE: ${DEVICE:-auto}
+      MODEL_CACHE_DIR: ${MODEL_CACHE_DIR:-/models}
+      DEMUCS_MODEL: ${DEMUCS_MODEL:-htdemucs}
+    volumes:
+      - model_cache:/models
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - api
+    environment:
+      API_UPSTREAM: ${API_UPSTREAM:-api:8000}
+    ports:
+      - "${FRONTEND_PORT:-5173}:80"
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:
+  model_cache:
